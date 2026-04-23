@@ -1,0 +1,3 @@
+split,rows,columns
+train,2800,18
+test,700,18

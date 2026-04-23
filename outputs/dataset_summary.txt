@@ -1,0 +1,37 @@
+Rows: 3500
+Columns: 29
+Missing values: 0
+Dropped redundant features: symptoms_count
+
+Top outlier counts from training data (IQR method):
+              feature  outlier_count  outlier_ratio
+            pale_skin            441         0.1575
+   symptom_skin_score            422         0.1507
+      night_blindness            290         0.1036
+             dry_skin            201         0.0718
+ symptom_energy_score            162         0.0579
+        bleeding_gums            120         0.0429
+    sun_d_interaction             86         0.0307
+vitamin_d_percent_rda             82         0.0293
+     bone_health_mean             50         0.0179
+     iron_percent_rda             45         0.0161
+
+Top mutual information feature scores:
+vitamin_d_percent_rda      0.750641
+bone_health_mean           0.505986
+vitamin_b12_percent_rda    0.428851
+nutrient_min               0.422218
+nutrient_mean              0.399941
+sun_d_interaction          0.374487
+symptom_neuro_score        0.368931
+fat_soluble_mean           0.326636
+blood_health_mean          0.295915
+income_diet_interaction    0.277518
+diet_type                  0.217847
+numbness_tingling          0.182536
+symptom_energy_score       0.182219
+iron_percent_rda           0.171533
+bone_pain                  0.168601
+memory_problems            0.145962
+muscle_weakness            0.137794
+income_level               0.137350
