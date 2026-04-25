@@ -11,12 +11,12 @@ from sklearn.linear_model import ElasticNet
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+pd.set_option('display.max_columns', None)
 
-
-RANDOM_STATE = 42
+RANDOM_STATE = 67
 TARGET_COLUMN = "vitamin_deficiency"
 DATA_PATH = "train_data_processed.csv"
-OUTPUT_DIR = ".\\outputs"
+OUTPUT_DIR = ".\\outputs\\"
 
 SYMPTOM_COLUMNS = [
     "night_blindness",
@@ -72,10 +72,6 @@ def engineer_features(df: pd.DataFrame):
 def remove_unwanted_features(X: pd.DataFrame, correlation_threshold: float = 0.95):
     cleaned = X.copy()
     dropped_features = []
-
-    # duplicate_rows = cleaned.duplicated().sum()
-    # if duplicate_rows:
-    #     cleaned = cleaned.loc[~cleaned.duplicated()].copy()
 
     zero_variance = [column for column in cleaned.columns if cleaned[column].nunique() <= 1]
     if zero_variance:
@@ -143,30 +139,6 @@ def cap_outliers_iqr(X_train: pd.DataFrame, X_test: pd.DataFrame, bounds):
     return X_train_capped, X_test_capped
 
 
-# def save_dataset_overview(
-#     df: pd.DataFrame,
-#     feature_scores: pd.Series,
-#     dropped_features: list[str],
-#     manually_removed_features: list[str],
-#     outlier_summary: pd.DataFrame,
-# ) -> None:
-#     overview_path = OUTPUT_DIR / "dataset_summary.txt"
-#     with overview_path.open("w", encoding="utf-8") as file:
-#         file.write(f"Rows: {df.shape[0]}\n")
-#         file.write(f"Columns: {df.shape[1]}\n")
-#         file.write(f"Missing values: {int(df.isna().sum().sum())}\n")
-#         all_removed = manually_removed_features + dropped_features
-#         file.write(f"Dropped redundant features: {', '.join(all_removed) or 'None'}\n\n")
-#         file.write("Top outlier counts from training data (IQR method):\n")
-#         file.write(
-#             outlier_summary.head(10)[["feature", "outlier_count", "outlier_ratio"]]
-#             .round(4)
-#             .to_string(index=False)
-#         )
-#         file.write("\n\n")
-#         file.write("Top mutual information feature scores:\n")
-#         file.write(feature_scores.head(18).round(6).to_string())
-
 
 def plot_target_distribution(y: pd.Series):
     fig, ax = plt.subplots(figsize=(8, 5))
@@ -227,57 +199,79 @@ def plot_correlation_heatmap(df: pd.DataFrame, selected_columns: list[str]) -> N
     plt.close(fig)
 
 
-def build_models() -> dict[str, object]:
-    elastic_net = Pipeline(
-        steps=[
-            ("scaler", StandardScaler()),
-            ("model", ElasticNet(alpha=0.01, l1_ratio=0.35, max_iter=10000)),
-        ]
-    )
-
-    models = {
-        "ElasticNet": TransformedTargetRegressor(
-            regressor=elastic_net, func=np.log1p, inverse_func=np.expm1
-        ),
-        "RandomForest": RandomForestRegressor(
-            n_estimators=400,
-            max_depth=10,
-            min_samples_split=6,
-            min_samples_leaf=2,
-            random_state=RANDOM_STATE,
-            n_jobs=-1,
-        ),
-        "GradientBoosting": GradientBoostingRegressor(
-            n_estimators=300,
-            learning_rate=0.05,
-            max_depth=3,
-            random_state=RANDOM_STATE,
-        ),
-    }
-    return models
-
-
-def evaluate_models(models, X_train, X_test, y_train, y_test):
+def evaluate_models(X_train, X_test, y_train, y_test):
     rows = []
     predictions = {}
 
-    for model_name, model in models.items():
-        model.fit(X_train, y_train)
-        y_pred = np.clip(model.predict(X_test), a_min=0, a_max=None)
-        predictions[model_name] = y_pred
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
-        rows.append(
-            {
-                "model": model_name,
-                "r2_score": r2_score(y_test, y_pred),
-                "rmse": float(np.sqrt(mean_squared_error(y_test, y_pred))),
-                "mae": mean_absolute_error(y_test, y_pred),
-            }
-        )
+    y_train_log = np.log1p(y_train)
 
-    metrics = pd.DataFrame(rows).sort_values(by="r2_score", ascending=False).reset_index(
-        drop=True
+    elastic_net = ElasticNet(alpha=0.01, l1_ratio=0.35, max_iter=10000)
+    elastic_net.fit(X_train_scaled, y_train_log)
+
+    y_pred_log = elastic_net.predict(X_test_scaled)
+    y_pred = np.expm1(y_pred_log)
+    y_pred = np.clip(y_pred, a_min=0, a_max=None)
+
+    predictions["ElasticNet"] = y_pred
+
+    rows.append(
+        {
+            "model": "ElasticNet",
+            "r2_score": r2_score(y_test, y_pred),
+            "rmse": float(np.sqrt(mean_squared_error(y_test, y_pred))),
+            "mae": mean_absolute_error(y_test, y_pred),
+        }
     )
+
+
+    random_forest = RandomForestRegressor(
+        n_estimators=400,
+        max_depth=10,
+        min_samples_split=6,
+        min_samples_leaf=2,
+        random_state=RANDOM_STATE,
+        n_jobs=-1,
+    )
+    random_forest.fit(X_train, y_train)
+
+    y_pred = np.clip(random_forest.predict(X_test), a_min=0, a_max=None)
+    predictions["RandomForest"] = y_pred
+
+    rows.append(
+        {
+            "model": "RandomForest",
+            "r2_score": r2_score(y_test, y_pred),
+            "rmse": float(np.sqrt(mean_squared_error(y_test, y_pred))),
+            "mae": mean_absolute_error(y_test, y_pred),
+        }
+    )
+
+    
+    gradient_boosting = GradientBoostingRegressor(
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=3,
+        random_state=RANDOM_STATE,
+    )
+    gradient_boosting.fit(X_train, y_train)
+
+    y_pred = np.clip(gradient_boosting.predict(X_test), a_min=0, a_max=None)
+    predictions["GradientBoosting"] = y_pred
+
+    rows.append(
+        {
+            "model": "GradientBoosting",
+            "r2_score": r2_score(y_test, y_pred),
+            "rmse": float(np.sqrt(mean_squared_error(y_test, y_pred))),
+            "mae": mean_absolute_error(y_test, y_pred),
+        }
+    )
+
+    metrics = pd.DataFrame(rows).sort_values(by="r2_score", ascending=False).reset_index(drop=True)
     return metrics, predictions
 
 
@@ -317,38 +311,10 @@ def plot_model_predictions(y_test, predictions, metrics):
         line_ax.legend()
 
     fig.tight_layout()
-    fig.savefig(OUTPUT_DIR / "model_predictions.png", dpi=220)
+    fig.savefig(OUTPUT_DIR + "model_predictions.png", dpi=220)
     plt.close(fig)
 
 
-# def save_results(
-#     X_train: pd.DataFrame,
-#     X_test: pd.DataFrame,
-#     y_test: pd.Series,
-#     metrics: pd.DataFrame,
-#     predictions: dict[str, np.ndarray],
-#     feature_scores: pd.Series,
-#     outlier_summary: pd.DataFrame):
-#     metrics.to_csv(OUTPUT_DIR / "model_metrics.csv", index=False)
-#     feature_scores.rename("mutual_information").to_csv(OUTPUT_DIR / "feature_scores.csv")
-#     outlier_summary.to_csv(OUTPUT_DIR / "outlier_summary.csv", index=False)
-
-#     prediction_frame = pd.DataFrame({"actual": y_test.reset_index(drop=True)})
-#     for model_name, y_pred in predictions.items():
-#         prediction_frame[f"{model_name}_predicted"] = y_pred
-#     prediction_frame.to_csv(OUTPUT_DIR / "test_predictions.csv", index=False)
-
-#     selected_features = pd.DataFrame({"selected_feature": X_train.columns})
-#     selected_features.to_csv(OUTPUT_DIR / "selected_features.csv", index=False)
-
-#     train_test_shapes = pd.DataFrame(
-#         {
-#             "split": ["train", "test"],
-#             "rows": [X_train.shape[0], X_test.shape[0]],
-#             "columns": [X_train.shape[1], X_test.shape[1]],
-#         }
-#     )
-#     train_test_shapes.to_csv(OUTPUT_DIR / "train_test_shapes.csv", index=False)
 
 
 def main():
@@ -372,15 +338,11 @@ def main():
     X_train_selected, X_test_selected, feature_scores = select_features(X_train_capped, y_train, X_test_capped)
     plot_correlation_heatmap(pd.concat([X_train_capped[X_train_selected.columns], y_train], axis=1), X_train_selected.columns.tolist())
 
-    models = build_models()
 
-    metrics, predictions = evaluate_models(models, X_train_selected, X_test_selected, y_train, y_test)
+    metrics, predictions = evaluate_models(X_train_selected, X_test_selected, y_train, y_test)
     plot_model_predictions(y_test, predictions, metrics)
 
-    # save_results(X_train_selected, X_test_selected, y_test, metrics, predictions, feature_scores, outlier_summary)
-
-    print("Regression pipeline complete.")
-    print(f"Outputs saved to: {OUTPUT_DIR.resolve()}")
+    print("Regression complete.")
     print("\nModel performance:")
     print(metrics.round(4).to_string(index=False))
 
